@@ -1,0 +1,215 @@
+# this workflow executes when changes are pushed to a dbt semantic model
+
+name: sigma_converter
+
+# controls when the workflow will run
+on:
+  # triggers the workflow on push events but only for the "main" branch
+  # and only when files in the specified directory are changed
+  push:
+    branches: [ "main" ]
+    paths:
+      # Modify this path pattern to match your semantic models directory
+      # example: 'models/sigma/**/*.yml'
+      - 'models/semantics/*.yml'
+
+  # allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# a workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # this workflow contains a single job
+  dbt_to_sigma:
+    # the type of runner that the job will run on
+    runs-on: ubuntu-latest
+    
+    # required to push commits
+    permissions:
+      contents: write  
+
+    # ateps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Fetch at least 2 commits to compare HEAD~1 with HEAD
+
+      - name: Which Files Changed
+        id: which_files_changed
+        if: ${{ vars.MODE == 'update' }}
+        run: |
+          # Don't exit on error - we'll handle errors gracefully
+          set +e
+          
+          # Debug: Show current commit info
+          echo "Current commit (HEAD): $(git rev-parse HEAD)"
+          head_minus_one=$(git rev-parse HEAD~1 2>&1)
+          if [ $? -eq 0 ]; then
+            echo "Previous commit (HEAD~1): $head_minus_one"
+          else
+            echo "Previous commit (HEAD~1): does not exist"
+          fi
+          
+          # Compare current commit (HEAD) with previous commit (HEAD~1)
+          # For merge commits, HEAD~1 is the main branch before merge, HEAD is the merge commit
+          # This captures all files changed in the merge
+          changed_files=$(git diff --name-only HEAD~1 HEAD 2>&1)
+          exit_code=$?
+          
+          # If git diff fails (e.g., HEAD~1 doesn't exist), treat as no changes
+          if [ $exit_code -ne 0 ]; then
+            echo "Warning: git diff failed (exit code $exit_code), treating as no changes"
+            echo "Error output: $changed_files"
+            changed_files=""
+          fi
+          
+          # Filter for .yml files only and extract just the filename (basename)
+          yml_files=""
+          file_count=0
+          while IFS= read -r file; do
+            if [ -n "$file" ] && [[ "$file" == *.yml ]]; then
+              # Extract just the filename (basename) from the path
+              filename=$(basename "$file")
+              if [ -z "$yml_files" ]; then
+                yml_files="$filename"
+              else
+                yml_files="$yml_files"$'\n'"$filename"
+              fi
+              ((file_count++))
+            fi
+          done <<< "$changed_files"
+          
+          # Output as multiline string (newline-delimited)
+          if [ -n "$yml_files" ]; then
+            echo "files<<EOF" >> $GITHUB_OUTPUT
+            echo "$yml_files" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "file_count=$file_count" >> $GITHUB_OUTPUT
+          else
+            echo "files=" >> $GITHUB_OUTPUT
+            echo "file_count=0" >> $GITHUB_OUTPUT
+          fi
+          
+          # Debug output
+          echo "Found $file_count changed YML file(s):"
+          if [ -n "$yml_files" ]; then
+            echo "$yml_files"
+          else
+            echo "No YML files changed"
+          fi
+          
+          # Always exit successfully (even if no files changed)
+          exit 0
+          
+      - name: Set up Node.js
+        if: (${{ vars.MODE == 'update' }} && steps.which_files_changed.outputs.file_count > 0) || ${{ vars.MODE == 'initial' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: sigma_converter/package.json
+      
+      - name: Install dependencies
+        if: (${{ vars.MODE == 'update' }} && steps.which_files_changed.outputs.file_count > 0) || ${{ vars.MODE == 'initial' }}
+        working-directory: sigma_converter
+        run: |
+          # Check if package-lock.json exists
+          if [ -f "package-lock.json" ]; then
+            echo "package-lock.json found, using npm ci for deterministic install"
+            npm ci
+          else
+            echo "package-lock.json not found, generating it with npm install"
+            npm install
+          fi
+      
+      - name: Process Semantic Models
+        id: process_semantic_models
+        if: (${{ vars.MODE == 'update' }} && steps.which_files_changed.outputs.file_count > 0) || ${{ vars.MODE == 'initial' }}
+        working-directory: sigma_converter
+        env:
+          # initial or update
+          MODE: ${{ vars.MODE }}
+
+          APP_ENV: 'local'
+          CACHE_PROVIDER: 'node-cache'
+          # set to 'true' for test mode (uses placeholder functions instead of actual Sigma API calls)
+          TEST_FLAG: 'false'
+
+          # sigma org name
+          SIGMA_DOMAIN: ${{ secrets.SIGMA_DOMAIN }}
+          # set to 'true' if Sigma connection is configured to convert column names to user friendly names 
+          USER_FRIENDLY_COLUMN_NAMES: 'true'
+
+          # Sigma API Configuration
+          API_URL: ${{ vars.API_URL }}
+          API_CLIENT_ID: ${{ secrets.API_CLIENT_ID }}
+          API_SECRET: ${{ secrets.API_SECRET }}
+
+          # flag to indicate running in CI/CD
+          FROM_CI_CD: 'true'
+          # git configuration for commits
+          GIT_USER: ${{ secrets.GIT_USER }}
+          GIT_EMAIL: ${{ secrets.GIT_EMAIL }}
+
+          # DAG Configuration
+          DAG_FILE: './output/dag.json'
+
+          # Main Configuration
+          TIME_SPINE_FILE: '../models/semantics/_models.yml'
+          SOURCE_DIR: '../models/semantics'
+          OUTPUT_DIR: './output'
+          SIGMA_MODEL_DIR: './sigma_model'
+
+          # Sigma Configuration
+          SIGMA_FOLDER_ID: ${{ secrets.SIGMA_FOLDER_ID }}
+          CONNECTION_ID: ${{ secrets.CONNECTION_ID }}
+          DB: ${{ secrets.DB }}
+          SCHEMA: ${{ secrets.SCHEMA }}
+        run: |
+          if [ "$MODE" == "update" ]; then
+            # Read files from multiline output
+            files="${{ steps.which_files_changed.outputs.files }}"
+            
+            # Build arguments array for main.js
+            # Format: node src/main.js <file1> <file2> ...
+            main_args=()
+            
+            # Add each changed file to the arguments
+            # Files are already just filenames (extracted in which_files_changed step)
+            while IFS= read -r file; do
+              if [ -n "$file" ]; then
+                main_args+=("$file")
+              fi
+            done <<< "$files"
+            
+            # Call main.js with update mode and changed files
+            file_count=$((${#main_args[@]}))
+            echo "Calling main.js in ${MODE} mode with $file_count changed file(s)"
+            echo "Arguments: ${main_args[@]}"
+            node src/main.js "${main_args[@]}"
+          else
+            # For initial mode, simply execute main.js
+            echo "Calling main.js in ${MODE} mode"
+            node src/main.js
+          fi
+      
+      - name: Push Changes to Repository
+        if: (${{ vars.MODE == 'update' }} && steps.which_files_changed.outputs.file_count > 0) || ${{ vars.MODE == 'initial' }}
+        run: |
+          # fetch latest from origin to compare
+          git fetch origin main
+          
+          # check if there are any local commits ahead of origin/main
+          if git rev-list --count HEAD ^origin/main > /dev/null 2>&1; then
+            commit_count=$(git rev-list --count HEAD ^origin/main)
+            if [ "$commit_count" -gt 0 ]; then
+              echo "Found $commit_count commit(s) to push"
+              echo "Pushing commits to main branch..."
+              git push origin main
+              echo "✓ Successfully pushed commits to main branch"
+            else
+              echo "No local commits to push"
+            fi
+          else
+            echo "No local commits to push"
+          fi
