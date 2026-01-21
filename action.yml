@@ -1,6 +1,7 @@
 # this workflow executes when changes are pushed to a dbt semantic model
 
-name: sigma_converter
+name: dbt_semantics_to_sigma
+description: This workflow converts dbt semantic models to Sigma data models.
 
 # controls when the workflow will run
 on:
