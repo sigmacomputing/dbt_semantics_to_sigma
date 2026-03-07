@@ -33,9 +33,11 @@ function parseDimensionReference(dimRef) {
   if (parts.length >= 2) {
 
     // if process.env.USER_FRIENDLY_COLUMN_NAMES is true, convert the dimension name to a user friendly name
-    userFriendlyDimensionName = userFriendlyColumnNameFlag === 'true' 
-    ? convertToUserFriendlyName(parts[1]) 
-    : parts[1];
+    // userFriendlyDimensionName = userFriendlyColumnNameFlag === 'true' 
+    // ? convertToUserFriendlyName(parts[1]) 
+    // : parts[1];
+
+    userFriendlyDimensionName = parts[1];
 
     return {
       modelName: parts[0],
@@ -46,9 +48,11 @@ function parseDimensionReference(dimRef) {
 
   // if no __ separator, assume it's just a dimension name in current model
 
-  userFriendlyDimensionName = userFriendlyColumnNameFlag === 'true' 
-  ? convertToUserFriendlyName(dimRef) 
-  : dimRef;
+  // userFriendlyDimensionName = userFriendlyColumnNameFlag === 'true' 
+  // ? convertToUserFriendlyName(dimRef) 
+  // : dimRef;
+
+  userFriendlyDimensionName = dimRef;
 
   return {
     modelName: null,

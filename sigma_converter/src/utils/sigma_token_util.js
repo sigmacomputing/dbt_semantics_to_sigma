@@ -17,7 +17,7 @@ async function getBearerToken(secrets) {
             client_secret: secrets.apiSecret
         });
 
-        const response = await axios.post(secrets.apiUrl + '/v2/auth/token', requestData, {
+        const response = await axios.post(secrets.apiUrl + '/auth/token', requestData, {
             headers: {'Content-Type': 'application/x-www-form-urlencoded'}
         });
 
@@ -40,7 +40,7 @@ async function refreshAccessToken(refreshToken, secrets) {
             refresh_token: refreshToken,
         });
 
-        const response = await axios.post(secrets.apiUrl + '/v2/auth/token', requestData, {
+        const response = await axios.post(secrets.apiUrl + '/auth/token', requestData, {
             headers: {'Content-Type': 'application/x-www-form-urlencoded'}
         });
 

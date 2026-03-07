@@ -18,7 +18,7 @@ async function getDataModelFromSigma(dataModelId) {
         return;
     }
 
-    const requestURL = `${secrets.apiUrl}/v3alpha/dataModels/${dataModelId}/spec`;
+    const requestURL = `${secrets.apiUrl}/dataModels/${dataModelId}/spec`;
     //console.log(`URL sent to Sigma: ${requestURL}`);
 
     try {

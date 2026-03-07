@@ -160,6 +160,7 @@ jobs:
           DAG_FILE: './output/dag.json'
 
           # Main Configuration
+          SEMANTIC_MANIFEST_FILE: '../models/semantics/semantic_manifest.json'
           TIME_SPINE_FILE: '../models/semantics/_models.yml'
           SOURCE_DIR: '../models/semantics'
           OUTPUT_DIR: './output'

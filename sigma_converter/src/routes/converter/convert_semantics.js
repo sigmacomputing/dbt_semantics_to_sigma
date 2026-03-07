@@ -11,22 +11,52 @@ const { addTimeRelationships } = require('../time');
 const { sanitizePath } = require('./path_utils');
 
 /**
+ * rewrites column formulas for foreign entity data models to use the current entity name instead of the source in the referenced data model.
+ * the column formula in the referenced data model may refer to the warehouse table. the current data model needs to refer to the name of the table in the referenced data model..
+ * e.g. [D_CUSTOMER/Cust Key] -> [d_customer/Cust Key]
+ * @param {Array} columns - columns from foreign entity's Sigma model
+ * @param {string} entityName - the entity name in the current model context
+ * @returns {Array} columns with updated formulas
+ */
+function rewriteColumnFormulasForForeignEntity(columns, entityName) {
+  if (!columns || !entityName) return columns;
+  return columns.map(col => {
+    if (!col.formula || typeof col.formula !== 'string') return col;
+    return {
+      ...col,
+      formula: `[${entityName}/${col.name}]`
+    };
+  });
+}
+
+/**
+ * get warehouse table path [database, schema, table] from manifest's node_relation.
+ * assumes the semantic model and node_relation exist in the manifest.
+ * @param {Object} manifest - parsed semantic_manifest.json
+ * @param {string} semanticModelName - name of semantic model (matches primaryEntity.name)
+ * @returns {[string, string, string]} [database, schema, table]
+ */
+function getWhTableFromManifest(manifest, semanticModelName) {
+  const model = manifest.semantic_models.find(m => m.name === semanticModelName);
+  const nr = model.node_relation;
+  const table = nr.relation_name.split('.').pop().toUpperCase();
+  return [nr.database, nr.schema_name, table];
+}
+
+/**
  * converts dbt semantic layer YAML to target format
  * @param {string} sourceFilePath - path to source YAML file
  * @param {string} targetFilePath - path to output YAML file
  * @param {Object} options - conversion options
  * @param {string} options.dataModelFolder - data model folder path
  * @param {string} options.connectionId - connection ID for target
- * @param {string} options.db - database name
- * @param {string} options.schema - schema name
  * @param {string} options.tableName - table name
  * @param {string} options.sigmaModelDir - path to sigma_model directory for foreign key lookups
  * @param {string} options.modelName - name of the semantic model to process (required when multiple models exist in file)
  * @param {string} options.timeSpineFile - _models.yml file for time spine models
- * @param {Array<Object>} options.foreignEntities - foreign entities from DAG with fileName and semanticModelName
+ * @param {Array<Object>} options.foreignEntities - foreign entities from DAG with semanticModelName
+ * @param {string} options.manifestPath - path to semantic_manifest.json
  */
-
-//TODO: db, schema and table name need to come from dbt
 function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
   try {
     // read and parse dbt semantics YAML
@@ -57,6 +87,10 @@ function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
       console.warn(`Warning: No primary entity found in semantic model ${semanticModel.name}`);
     }
 
+    // path from manifest node_relation (model and node_relation assumed to exist)
+    const manifest = JSON.parse(fs.readFileSync(options.manifestPath, 'utf8'));
+    const whTablePath = getWhTableFromManifest(manifest, semanticModel.name);
+
     // build structure for Sigma data model
     // this section handles sourcing tables from the connection
     let targetData = {
@@ -77,11 +111,7 @@ function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
             name: primaryEntity.name,
             kind: 'warehouse-table',
             connectionId: options.connectionId || '$connectionId',
-            path: [
-              options.db || '$db',
-              options.schema || '$schema',
-              primaryEntity.name.toUpperCase()
-            ]
+            path: whTablePath
           },
           columns: [],
           filters: [],
@@ -106,10 +136,10 @@ function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
           : dimension.name;
         
         const column = {
-          id: `${semanticModel.name}__${dimension.name}`,
-          name: userFriendlyDimensionName,
+          id: `${dimension.name}`,
+          name: dimension.name,
           description: dimension.description,
-          formula: buildDimensionFormula(dimension, semanticModel.name, userFriendlyDimensionName)
+          formula: buildDimensionFormula(dimension, whTablePath[2], userFriendlyDimensionName)
         };
 
         // add synonyms if available
@@ -158,20 +188,18 @@ function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
     for (const entity of foreignEntities) {
       const entityName = entity.name;
       
-      // get fileName and semanticModelName from DAG foreignEntities if available
-      let fileName = entityName;
+      // get semanticModelName from DAG foreignEntities if available
+      let sigmaModelFileName = entityName;
       let semanticModelName = null;
       
       const foreignEntityInDag = dagForeignEntities.find(fe => fe.name === entityName);
-      if (foreignEntityInDag) {
-        if (foreignEntityInDag.semanticModelName) {
-          semanticModelName = foreignEntityInDag.semanticModelName;
-          fileName = foreignEntityInDag.semanticModelName;
-        }
+      if (foreignEntityInDag && foreignEntityInDag.semanticModelName) {
+        semanticModelName = foreignEntityInDag.semanticModelName;
+        sigmaModelFileName = foreignEntityInDag.semanticModelName;
       }
       
-      // sanitize to prevent path traversal
-      const sigmaModelPath = sanitizePath(fileName, options.sigmaModelDir, '.yml');
+      // sanitize to prevent path traversal (sigma model dir is flat: modelName.yml)
+      const sigmaModelPath = sanitizePath(`${sigmaModelFileName}.yml`, options.sigmaModelDir);
       
       if (fs.existsSync(sigmaModelPath)) {
         try {
@@ -235,7 +263,7 @@ function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
             dataModelId: entityData.datamodelId,
             elementId: entityData.tableId
           },
-          columns: entityData.columns,
+          columns: rewriteColumnFormulasForForeignEntity (entityData.columns, entityName),
           filters: [],
           folders: [],
           metrics: [],
@@ -365,8 +393,7 @@ function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
     if (options.timeSpineFile) {
       targetData = addTimeRelationships(targetData, semanticModel, options.timeSpineFile, {
         connectionId: options.connectionId,
-        db: options.db,
-        schema: options.schema
+        manifestPath: options.manifestPath
       });
     } else {
       console.warn('modelsFilePath not provided, skipping time dimension processing');

@@ -18,8 +18,10 @@ async function createDataModelInSigma(dataModelSpec) {
         return;
     }
 
-    const requestURL = `${secrets.apiUrl}/v3alpha/dataModels/spec`;
+    const requestURL = `${secrets.apiUrl}/dataModels/spec`;
     //console.log(`URL sent to Sigma: ${requestURL}`);
+
+    //console.log(JSON.stringify(dataModelSpec, null, 2))
 
     try {
         const response = await axios.post(requestURL, dataModelSpec, {

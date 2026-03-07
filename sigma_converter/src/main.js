@@ -17,14 +17,13 @@ async function main() {
   // configuration
   const config = {
     dagFile: process.env.DAG_FILE,
+    manifestPath: process.env.SEMANTIC_MANIFEST_FILE,
     timeSpineFile: process.env.TIME_SPINE_FILE,
     sourceDir: process.env.SOURCE_DIR,
     outputDir: process.env.OUTPUT_DIR,
     sigmaModelDir: process.env.SIGMA_MODEL_DIR,
     sigmaFolderId: process.env.SIGMA_FOLDER_ID,
     connectionId: process.env.CONNECTION_ID,
-    db: process.env.DB,
-    schema: process.env.SCHEMA,
     mode: process.env.MODE
   };
 
@@ -50,12 +49,11 @@ async function main() {
   console.log('Configuration:');
   console.log(`  Mode: ${config.mode}`);
   console.log(`  DAG File: ${config.dagFile}`);
+  console.log(`  Manifest: ${config.manifestPath}`);
   console.log(`  Source Directory: ${config.sourceDir}`);
   console.log(`  Output Directory: ${config.outputDir}`);
   console.log(`  Sigma Model Directory: ${config.sigmaModelDir}`);
   console.log(`  Connection ID: ${config.connectionId}`);
-  console.log(`  Database: ${config.db}`);
-  console.log(`  Schema: ${config.schema}`);
   if (config.mode === 'update') {
     console.log(`  Changed Files: ${changedFiles.length}`);
     changedFiles.forEach(file => console.log(`    - ${file}`));

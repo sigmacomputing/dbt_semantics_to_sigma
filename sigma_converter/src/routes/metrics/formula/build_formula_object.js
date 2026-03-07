@@ -15,9 +15,11 @@ function buildMeasureFormula(measure) {
   userFriendlyColumnNameFlag = process.env.USER_FRIENDLY_COLUMN_NAMES;
 
   // if process.env.USER_FRIENDLY_COLUMN_NAMES is true, convert the measure name to a user friendly name
-  const userFriendlyExpr = userFriendlyColumnNameFlag === 'true' 
-  ? convertToUserFriendlyName(expr) 
-  : expr;
+  // const userFriendlyExpr = userFriendlyColumnNameFlag === 'true' 
+  // ? convertToUserFriendlyName(expr) 
+  // : expr;
+
+  const userFriendlyExpr = expr;
   
   let aggFunc;
   let formula;

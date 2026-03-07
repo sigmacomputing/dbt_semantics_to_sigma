@@ -1,39 +1,38 @@
 const path = require('path');
 
 /**
- * sanitize filename to prevent path traversal attacks
- * @param {string} filename - filename to sanitize
- * @param {string} baseDir - base directory to validate against
- * @param {string} extension - file extension to append (e.g., '.yml')
- * @returns {string} sanitized absolute path
+ * Resolve and validate a file path within a base directory to prevent path traversal attacks.
+ * Supports paths with subdirectories (e.g., 'gtm/d_customer.yml').
+ * @param {string} filePath - path relative to baseDir (e.g., 'gtm/d_customer.yml' or 'd_customer.yml')
+ * @param {string} baseDir - base directory to resolve against
+ * @returns {string} resolved absolute path
  * @throws {Error} if path traversal is detected
  */
-function sanitizePath(filename, baseDir, extension = '') {
-  if (!filename || typeof filename !== 'string') {
-    throw new Error('Filename must be a non-empty string');
+function sanitizePath(filePath, baseDir) {
+  if (!filePath || typeof filePath !== 'string') {
+    throw new Error('FilePath must be a non-empty string');
   }
 
-  // Remove any path traversal sequences and path separators
-  // This prevents ../, ..\\, and other directory navigation attempts
-  const sanitized = filename
-    .replace(/\.\./g, '') // Remove .. sequences
-    .replace(/[\/\\]/g, '') // Remove path separators
-    .replace(/[<>:"|?*\x00-\x1f]/g, '') // Remove invalid filename characters
+  // Reject path traversal - never allow ..
+  if (filePath.includes('..')) {
+    throw new Error('Path traversal detected: .. not allowed');
+  }
+
+  // Remove invalid filename characters but ALLOW path separators
+  const sanitized = filePath
+    .replace(/[<>:"|?*\x00-\x1f]/g, '')
     .trim();
 
   if (!sanitized || sanitized.length === 0) {
-    throw new Error('Filename is invalid after sanitization');
+    throw new Error('FilePath is invalid after sanitization');
   }
 
-  // Construct the path
-  const fullFilename = extension ? `${sanitized}${extension}` : sanitized;
-  const resolvedPath = path.resolve(baseDir, fullFilename);
+  const resolvedPath = path.resolve(baseDir, sanitized);
   const resolvedBaseDir = path.resolve(baseDir);
 
-  // Verify the resolved path is within the base directory
-  if (!resolvedPath.startsWith(resolvedBaseDir + path.sep) && 
+  if (!resolvedPath.startsWith(resolvedBaseDir + path.sep) &&
       resolvedPath !== resolvedBaseDir) {
-    throw new Error(`Path traversal detected: ${filename} would escape base directory`);
+    throw new Error(`Path traversal detected: ${filePath} would escape base directory`);
   }
 
   return resolvedPath;
@@ -42,4 +41,3 @@ function sanitizePath(filename, baseDir, extension = '') {
 module.exports = {
   sanitizePath
 };
-

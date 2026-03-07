@@ -25,7 +25,7 @@ class TopologicalSorter {
       if (depInfo.dependsOn.length === 0) {
         layer1.push({
           name: modelName,
-          fileName: depInfo.modelInfo.fileName,
+          filePath: depInfo.modelInfo.filePath,
           primaryEntity: depInfo.modelInfo.primaryEntity,
           foreignEntities: depInfo.modelInfo.foreignEntities
         });
@@ -61,7 +61,7 @@ class TopologicalSorter {
         if (allDependenciesResolved) {
           currentLayerModels.push({
             name: modelName,
-            fileName: depInfo.modelInfo.fileName,
+            filePath: depInfo.modelInfo.filePath,
             primaryEntity: depInfo.modelInfo.primaryEntity,
             foreignEntities: depInfo.modelInfo.foreignEntities
           });
@@ -81,7 +81,7 @@ class TopologicalSorter {
             const depInfo = this.dependencies.get(modelName);
             currentLayerModels.push({
               name: modelName,
-              fileName: depInfo.modelInfo.fileName,
+              filePath: depInfo.modelInfo.filePath,
               primaryEntity: depInfo.modelInfo.primaryEntity,
               foreignEntities: depInfo.modelInfo.foreignEntities
             });
@@ -129,7 +129,7 @@ class TopologicalSorter {
         modelCount: layer.models.length,
         models: layer.models.map(m => ({
           name: m.name,
-          fileName: m.fileName,
+          filePath: m.filePath,
           primaryEntity: m.primaryEntity,
           foreignEntities: m.foreignEntities
         }))
@@ -153,7 +153,7 @@ class TopologicalSorter {
       console.log(`\nLayer ${layer.layer}: ${layer.models.length} models`);
       console.log(`Description: ${layer.description}`);
       layer.models.forEach(model => {
-        console.log(`  - ${model.name} (${model.fileName})`);
+        console.log(`  - ${model.name} (${model.filePath})`);
         console.log(`    Primary: ${model.primaryEntity}`);
         if (model.foreignEntities.length > 0) {
           const foreignEntityNames = model.foreignEntities.map(fe => 

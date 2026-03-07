@@ -115,7 +115,7 @@ function convertColumnReferences(expr) {
     replacements.push({
       start: startPos,
       end: endPos,
-      replacement: `[${userFriendlyName}]`
+      replacement: `[${identifier}]`
     });
   }
   

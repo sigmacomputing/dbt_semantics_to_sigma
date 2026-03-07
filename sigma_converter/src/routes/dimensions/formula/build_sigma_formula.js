@@ -23,21 +23,21 @@ function convertExpressionToSigma(expr) {
 
   let converted = expr.trim();
   
-  // Normalize whitespace and handle multiline
+  // normalize whitespace and handle multiline
   converted = converted.replace(/\s+/g, ' ').trim();
   
   let changed = true;
   let iterations = 0;
   const maxIterations = 10; // Prevent infinite loops
   
-  // Apply conversions iteratively until no more changes
+  // apply conversions iteratively until no more changes
   while (changed && iterations < maxIterations) {
     changed = false;
     iterations++;
     
     const before = converted;
     
-    // Convert CASE first because it may contain other functions
+    // convert CASE first because it may contain other functions
     const caseResult = convertCase(converted, convertExpressionToSigma);
     if (caseResult && caseResult !== converted) {
       converted = caseResult;
@@ -45,7 +45,7 @@ function convertExpressionToSigma(expr) {
       continue;
     }
     
-    // Convert CONCAT (may appear inside CASE results or standalone)
+    // convert CONCAT (may appear inside CASE results or standalone)
     const concatResult = convertConcat(converted, convertExpressionToSigma);
     if (concatResult && concatResult !== converted) {
       converted = concatResult;
@@ -53,7 +53,7 @@ function convertExpressionToSigma(expr) {
       continue;
     }
     
-    // Convert SPLIT_PART (may appear inside CASE, CONCAT, or standalone)
+    // convert SPLIT_PART (may appear inside CASE, CONCAT, or standalone)
     const splitPartResult = convertSplitPart(converted, convertExpressionToSigma);
     if (splitPartResult && splitPartResult !== converted) {
       converted = splitPartResult;
@@ -61,13 +61,13 @@ function convertExpressionToSigma(expr) {
       continue;
     }
     
-    // If no function conversions happened, break
+    // if no function conversions happened, break
     if (before === converted) {
       break;
     }
   }
   
-  // Convert any remaining column references
+  // convert any remaining column references
   converted = convertColumnReferences(converted);
   
   return converted;
@@ -75,12 +75,12 @@ function convertExpressionToSigma(expr) {
 
 /**
  * builds the formula for a dimension column
- * @param {Object|string} dimension - the dimension object or expression string
- * @param {string} semanticModelName - the name of the semantic model
- * @param {string} userFriendlyDimensionName - the user-friendly name of the dimension (optional if dimension is a string)
+ * @param {Object|string} dimension - the dimension object
+ * @param {string} sourceName - the name of the source
+ * @param {string} userFriendlyDimensionName - the user-friendly name of the dimension
  * @returns {string} the formula for the dimension
  */
-function buildDimensionFormula(dimension, semanticModelName, userFriendlyDimensionName) {
+function buildDimensionFormula(dimension, sourceName, userFriendlyDimensionName) {
 
   if (dimension.expr && dimension.expr !== dimension.name) {
     return convertExpressionToSigma(dimension.expr);
@@ -89,11 +89,11 @@ function buildDimensionFormula(dimension, semanticModelName, userFriendlyDimensi
   // if dimension type is time, use date_trunc with granularity
   if (dimension.type === 'time' && dimension.type_params?.time_granularity) {
     const granularity = dimension.type_params.time_granularity;
-    return `DateTrunc('${granularity}', [${semanticModelName}/${userFriendlyDimensionName}])`;
+    return `DateTrunc('${granularity}', [${sourceName}/${userFriendlyDimensionName}])`;
   }
   
   // default formula format
-  return `[${semanticModelName}/${userFriendlyDimensionName}]`;
+  return `[${sourceName}/${userFriendlyDimensionName}]`;
 }
 
 /**

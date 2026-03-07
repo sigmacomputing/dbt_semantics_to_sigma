@@ -3,6 +3,25 @@ const fs = require('fs');
 const path = require('path');
 
 /**
+ * recursively find all .yml files in a directory (excluding _models.yml)
+ * @param {string} dirPath - directory to search
+ * @returns {string[]} array of absolute file paths
+ */
+function findYamlFiles(dirPath) {
+  const results = [];
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...findYamlFiles(fullPath));
+    } else if (entry.name.endsWith('.yml') && entry.name !== '_models.yml') {
+      results.push(fullPath);
+    }
+  }
+  return results;
+}
+
+/**
  * analyzes semantic model files to create a DAG
  */
 class SemanticModelAnalyzer {
@@ -18,15 +37,13 @@ class SemanticModelAnalyzer {
    */
   buildEntityToFileMap(directoryPath) {
     this.entityToFileMap.clear();
-    const files = fs.readdirSync(directoryPath)
-      .filter(file => file.endsWith('.yml') && file !== '_models.yml')
-      .map(file => path.join(directoryPath, file));
+    const files = findYamlFiles(directoryPath);
 
     files.forEach(filePath => {
       try {
         const content = fs.readFileSync(filePath, 'utf8');
         const data = yaml.load(content);
-        const fileName = path.basename(filePath, '.yml');
+        const relativeFilePath = path.relative(directoryPath, filePath);
         
         if (data.semantic_models) {
           data.semantic_models.forEach(semanticModel => {
@@ -35,7 +52,7 @@ class SemanticModelAnalyzer {
                 // record where entities are defined as primary or unique
                 if (entity.type === 'primary' || entity.type === 'unique') {
                   this.entityToFileMap.set(entity.name, {
-                    fileName: fileName,
+                    filePath: relativeFilePath,
                     semanticModelName: semanticModel.name
                   });
                 }
@@ -52,9 +69,10 @@ class SemanticModelAnalyzer {
   /**
    * parse a semantic model YAML file and extract entity information for all semantic models
    * @param {string} filePath - path to the semantic model YAML file
+   * @param {string} directoryPath - base directory (used to compute relative filePath)
    * @returns {Array<Object>} array of parsed model information objects
    */
-  parseSemanticModel(filePath) {
+  parseSemanticModel(filePath, directoryPath) {
     try {
 
       const content = fs.readFileSync(filePath, 'utf8');
@@ -64,13 +82,13 @@ class SemanticModelAnalyzer {
         throw new Error(`No semantic models found in ${filePath}.`);
       }
 
-      const fileName = path.basename(filePath, '.yml');
+      const relativeFilePath = path.relative(directoryPath, filePath);
       const modelInfos = [];
       
       // process each semantic model in the file
       data.semantic_models.forEach(semanticModel => {
         const modelInfo = {
-          fileName,
+          filePath: relativeFilePath,
           name: semanticModel.name,
           description: semanticModel.description,
           primaryEntity: null,
@@ -86,7 +104,7 @@ class SemanticModelAnalyzer {
             if (entity.type === 'primary') {
               modelInfo.primaryEntity = entity.name;
             } else if (entity.type === 'foreign') {
-              // store foreign entity as object with name, expr, and file
+              // store foreign entity as object with name, expr, filePath (path to source file), and semanticModelName
               const foreignEntityDef = {
                 name: entity.name,
                 expr: entity.expr || null
@@ -95,11 +113,11 @@ class SemanticModelAnalyzer {
               // find the file where this entity is defined as primary or unique
               const definitionInfo = this.entityToFileMap.get(entity.name);
               if (definitionInfo) {
-                foreignEntityDef.file = definitionInfo.fileName;
+                foreignEntityDef.filePath = definitionInfo.filePath;
                 foreignEntityDef.semanticModelName = definitionInfo.semanticModelName;
               } else {
                 // if not found, set to null (entity might be defined elsewhere or not yet processed)
-                foreignEntityDef.file = null;
+                foreignEntityDef.filePath = null;
                 foreignEntityDef.semanticModelName = null;
               }
               
@@ -129,18 +147,16 @@ class SemanticModelAnalyzer {
     console.log('Building entity-to-file mapping...');
     this.buildEntityToFileMap(directoryPath);
     
-    const files = fs.readdirSync(directoryPath)
-      .filter(file => file.endsWith('.yml') && file !== '_models.yml')
-      .map(file => path.join(directoryPath, file));
+    const files = findYamlFiles(directoryPath);
 
     console.log(`Found ${files.length} semantic model files to analyze.`);
 
     files.forEach(filePath => {
       try {
-        const modelInfos = this.parseSemanticModel(filePath);
+        const modelInfos = this.parseSemanticModel(filePath, directoryPath);
         modelInfos.forEach(modelInfo => {
           this.models.set(modelInfo.name, modelInfo);
-          console.log(`✓ Analyzed: ${modelInfo.name} (${modelInfo.fileName}).`);
+          console.log(`✓ Analyzed: ${modelInfo.name} (${modelInfo.filePath}).`);
         });
       } catch (error) {
         console.error(`✗ Failed to analyze ${filePath}:`, error.message);
@@ -180,7 +196,7 @@ class SemanticModelAnalyzer {
       }
 
       try {
-        const modelInfos = this.parseSemanticModel(filePath);
+        const modelInfos = this.parseSemanticModel(filePath, directoryPath);
         modelInfos.forEach(modelInfo => {
           changedModelNames.add(modelInfo.name);
           modelToFileMap.set(modelInfo.name, filePath);
@@ -205,7 +221,7 @@ class SemanticModelAnalyzer {
           // find which file contains this dependent model
           const dependentModelInfo = this.models.get(dependent);
           if (dependentModelInfo) {
-            const dependentFilePath = path.join(directoryPath, `${dependentModelInfo.fileName}.yml`);
+            const dependentFilePath = path.join(directoryPath, dependentModelInfo.filePath);
             if (fs.existsSync(dependentFilePath)) {
               filesToAnalyze.add(dependentFilePath);
               modelToFileMap.set(dependent, dependentFilePath);
@@ -229,12 +245,12 @@ class SemanticModelAnalyzer {
     
     filesToAnalyze.forEach(filePath => {
       try {
-        const modelInfos = this.parseSemanticModel(filePath);
+        const modelInfos = this.parseSemanticModel(filePath, directoryPath);
         modelInfos.forEach(modelInfo => {
           this.models.set(modelInfo.name, modelInfo);
           const isChanged = changedModelNames.has(modelInfo.name);
           const marker = isChanged ? '[CHANGED]' : '[DEPENDENT]';
-          console.log(`✓ Analyzed: ${modelInfo.name} (${modelInfo.fileName}) ${marker}`);
+          console.log(`✓ Analyzed: ${modelInfo.name} (${modelInfo.filePath}) ${marker}`);
         });
       } catch (error) {
         console.error(`✗ Failed to analyze ${filePath}:`, error.message);

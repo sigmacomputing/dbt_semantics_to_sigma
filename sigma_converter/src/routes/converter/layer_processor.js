@@ -15,14 +15,13 @@ const { sanitizePath } = require('./path_utils');
 class LayerProcessor {
   constructor(options = {}) {
     this.dagFile = options.dagFile;
+    this.manifestPath = options.manifestPath;
     this.timeSpineFile = options.timeSpineFile;
     this.sourceDir = options.sourceDir;
     this.outputDir = options.outputDir;
     this.sigmaModelDir = options.sigmaModelDir;
     this.sigmaFolderId = options.sigmaFolderId;
     this.connectionId = options.connectionId;
-    this.db = options.db;
-    this.schema = options.schema;
     this.mode = options.mode || 'initial'; // 'initial' or 'update'
 
     // ensure directories exist
@@ -108,7 +107,7 @@ class LayerProcessor {
       });
       
       // write to sigma_model folder (sanitize to prevent path traversal)
-      const sigmaModelPath = sanitizePath(modelName, this.sigmaModelDir, '.yml');
+      const sigmaModelPath = sanitizePath(`${modelName}.yml`, this.sigmaModelDir);
       fs.writeFileSync(sigmaModelPath, updatedYaml);
       
       console.log(`✓ Copied to sigma_model folder: ${sigmaModelPath}`);
@@ -141,7 +140,7 @@ class LayerProcessor {
       });
       
       // write to sigma_model folder (sanitize to prevent path traversal)
-      const sigmaModelPath = sanitizePath(modelName, this.sigmaModelDir, '.yml');
+      const sigmaModelPath = sanitizePath(`${modelName}.yml`, this.sigmaModelDir);
       fs.writeFileSync(sigmaModelPath, yamlContent);
       
       console.log(`✓ Saved data model spec to sigma_model folder: ${sigmaModelPath}`);
@@ -241,7 +240,7 @@ class LayerProcessor {
    */
   getExistingDataModelId(modelName) {
     // sanitize to prevent path traversal
-    const sigmaModelPath = sanitizePath(modelName, this.sigmaModelDir, '.yml');
+    const sigmaModelPath = sanitizePath(`${modelName}.yml`, this.sigmaModelDir);
     
     if (!fs.existsSync(sigmaModelPath)) {
       return null;
@@ -270,7 +269,7 @@ class LayerProcessor {
    * @returns {Promise<Object>} processing result
    */
   async processDbtModel(model, layerNumber) {
-    const { name, fileName, primaryEntity, foreignEntities } = model;
+    const { name, filePath, primaryEntity, foreignEntities } = model;
     
     console.log(`\n  Processing model: ${name} (Layer ${layerNumber})`);
     //console.log(`    Primary Entity: ${primaryEntity}`);
@@ -278,8 +277,10 @@ class LayerProcessor {
     
     try {
       // construct file paths (sanitize to prevent path traversal)
-      const sourceFilePath = sanitizePath(fileName, this.sourceDir, '.yml');
-      const outputFilePath = sanitizePath(name, this.outputDir, '.yml');
+      // source: use filePath from DAG (supports subdirectory structure)
+      // output: flat structure (model name only)
+      const sourceFilePath = sanitizePath(filePath, this.sourceDir);
+      const outputFilePath = sanitizePath(`${name}.yml`, this.outputDir);
       
       // check if source file exists
       if (!fs.existsSync(sourceFilePath)) {
@@ -295,9 +296,8 @@ class LayerProcessor {
       // prepare conversion options
       const conversionOptions = {
         outputDir: this.outputDir,
+        manifestPath: this.manifestPath,
         connectionId: this.connectionId,
-        db: this.db,
-        schema: this.schema,
         tableName: primaryEntity,
         sigmaModelDir: this.sigmaModelDir,
         sigmaFolderId: this.sigmaFolderId,
@@ -355,7 +355,7 @@ class LayerProcessor {
       return {
         success: true,
         modelName: name,
-        fileName: fileName,
+        filePath: filePath,
         primaryEntity: primaryEntity,
         foreignEntities: foreignEntities,
         outputFilePath: outputFilePath,
@@ -368,7 +368,7 @@ class LayerProcessor {
       return {
         success: false,
         modelName: name,
-        fileName: fileName,
+        filePath: filePath,
         error: error.message
       };
     }

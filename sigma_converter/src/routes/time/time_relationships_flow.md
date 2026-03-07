@@ -211,8 +211,7 @@ The time dimension processing is integrated into `convert_semantics.js`:
 if (options.modelsFilePath) {
   targetData = addTimeRelationships(targetData, semanticModel, options.modelsFilePath, {
     connectionId: options.connectionId,
-    db: options.db,
-    schema: options.schema
+    manifestPath: options.manifestPath
   });
 }
 ```

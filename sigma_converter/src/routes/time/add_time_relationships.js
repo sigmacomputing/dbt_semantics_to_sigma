@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
@@ -8,11 +9,26 @@ const { buildTimeSpineGranularityMap } = require('./build_time_spine_granularity
 const { convertToUserFriendlyName } = require('../dimensions/utils/convertToUserFriendlyName');
 
 /**
+ * get warehouse table path [database, schema, table] from manifest's project_configuration.time_spines.
+ * @param {Object} manifest - parsed semantic_manifest.json
+ * @param {string} timeSpineName - alias of the time spine (matches node_relation.alias)
+ * @returns {[string, string, string]|null} [database, schema, table] or null if not found
+ */
+function getTimeSpineWhTableFromManifest(manifest, timeSpineName) {
+  const timeSpines = manifest.project_configuration?.time_spines || [];
+  const timeSpine = timeSpines.find(ts => ts.node_relation?.alias === timeSpineName);
+  if (!timeSpine) return null;
+  const nr = timeSpine.node_relation;
+  const table = nr.relation_name.split('.').pop().toUpperCase();
+  return [nr.database, nr.schema_name, table];
+}
+
+/**
  * Adds time_spine elements and relationships to the target data structure
  * @param {Object} targetData - The target Sigma data model structure
  * @param {Object} semanticModel - The semantic model object
  * @param {string} timeSpineFile - _models.yml file for time spine models
- * @param {Object} options - Conversion options (connectionId, db, schema)
+ * @param {Object} options - Conversion options (connectionId, manifestPath)
  * @returns {Object} - Updated targetData with time_spine elements and relationships
  */
 function addTimeRelationships(targetData, semanticModel, timeSpineFile, options = {}) {
@@ -60,13 +76,14 @@ function addTimeRelationships(targetData, semanticModel, timeSpineFile, options 
     // ****************************************************
     // STEP 3: search the map created in step 2.5 for granularity. this is the timeSpineElement that needs to be used in step 4
     const timeSpineInfo = findTimeSpineColumn(timeSpineGranularityMap, granularity);
+ 
     if (!timeSpineInfo) {
       console.warn(`No time_spine column found for granularity: ${granularity}`);
       return;
     }
 
     // create unique element ID for this time_spine
-    const timeSpineElementId = `time_spine_${granularity}`;
+    const timeSpineElementId = `ts_${granularity}`;
     addedTimeSpines.set(granularity, timeSpineElementId);
 
     // ****************************************************
@@ -76,6 +93,10 @@ function addTimeRelationships(targetData, semanticModel, timeSpineFile, options 
 
     userFriendlyColumnNameFlag = process.env.USER_FRIENDLY_COLUMN_NAMES;
 
+    // path from manifest time_spines node_relation (time_spine and node_relation assumed to exist)
+    const manifest = JSON.parse(fs.readFileSync(options.manifestPath, 'utf8'));
+    const timeSpineWhTablePath = getTimeSpineWhTableFromManifest(manifest, timeSpineInfo.timeSpineName);
+    
     if (timeSpineModel.columns) {
       timeSpineModel.columns.forEach(col => {
 
@@ -86,9 +107,9 @@ function addTimeRelationships(targetData, semanticModel, timeSpineFile, options 
 
         const column = {
           id: `${timeSpineElementId}__${col.name}`,
-          name: userFriendlyDimensionName,
+          name: `${timeSpineElementId}__${col.name}`,
           description: col.description || '',
-          formula: `[${timeSpineInfo.timeSpineName}/${userFriendlyDimensionName}]`
+          formula: `[${timeSpineWhTablePath[2]}/${userFriendlyDimensionName}]`
         };
         timeSpineColumns.push(column);
       });
@@ -103,11 +124,7 @@ function addTimeRelationships(targetData, semanticModel, timeSpineFile, options 
         name: timeSpineInfo.timeSpineName,
         kind: 'warehouse-table',
         connectionId: options.connectionId || '$connectionId',
-        path: [
-          options.db || '$db',
-          options.schema || '$schema',
-          timeSpineInfo.timeSpineName.toUpperCase()
-        ]
+        path: timeSpineWhTablePath
       },
       columns: timeSpineColumns,
       filters: [],
@@ -120,7 +137,7 @@ function addTimeRelationships(targetData, semanticModel, timeSpineFile, options 
     targetData.pages[0].elements.push(timeSpineElement);
 
     // find the dimension for the agg_time_dimension
-    // column IDs use the format: ${semanticModel.name}__${dimension.name}
+    // column IDs use the format: ${dimension.name}
     const dimension = semanticModel.dimensions?.find(dim => dim.name === aggTimeDimension);
     if (!dimension) {
       console.warn(`Dimension ${aggTimeDimension} not found in semantic model`);
@@ -134,7 +151,7 @@ function addTimeRelationships(targetData, semanticModel, timeSpineFile, options 
       name: `${semanticModel.name}__${timeSpineElementId}`,
       targetElementId: timeSpineElementId,
       keys: [{
-        sourceColumnId: `${semanticModel.name}__${dimension.name}`,
+        sourceColumnId: `${dimension.name}`,
         targetColumnId: `${timeSpineElementId}__${timeSpineInfo.columnName}`
       }],
       relationshipType: 'N:1'

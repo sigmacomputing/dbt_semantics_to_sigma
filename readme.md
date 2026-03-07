@@ -3,6 +3,7 @@
 ## Overview
 This system implements a layer-by-layer processing workflow for converting dbt semantic models to Sigma data models based on dependency relationships defined in a DAG (Directed Acyclic Graph). The system supports both initial processing of all models and incremental updates for changed files.
 
+
 ## Key Features
 
 ### 1. Processing Modes
@@ -17,14 +18,12 @@ This system implements a layer-by-layer processing workflow for converting dbt s
 - **Incremental DAG Building**: In update mode, builds DAG only for changed files and their dependents
 
 ### 3. Sigma API Integration
-- **Create Data Model**: Creates new Sigma data models via API (`/v3alpha/dataModels/spec`)
-- **Update Data Model**: Updates existing data models via API (`/v3alpha/dataModels/{id}/spec`)
+- **Create Data Model**: Creates new Sigma data models via API (`/v2/dataModels/spec`)
+- **Update Data Model**: Updates existing data models via API (`/v2/dataModels/{id}/spec`)
 - **Get Data Model**: Retrieves data model specifications from Sigma API
-- **Test Mode**: Supports test mode with placeholder functions when `TEST_FLAG=true`
 - **ID Management**: Automatically retrieves existing data model IDs from sigma_model files in update mode
 
 ### 4. File Management
-- **Output Generation**: Creates processed YAML files in the output directory
 - **Sigma Model Storage**: Saves data model specs from Sigma API to sigma_model folder
 - **Foreign Entity References**: Uses IDs from sigma_model files for foreign entity relationships
 - **Git Integration**: Optionally commits changes to git repository when `FROM_CI_CD=true`
@@ -33,6 +32,7 @@ This system implements a layer-by-layer processing workflow for converting dbt s
 - **Foreign Entity Lookup**: Automatically resolves foreign entity references using sigma_model files
 - **Relationship Configuration**: Creates proper relationship configurations between primary and foreign entities
 - **ID Propagation**: Ensures foreign entities reference the correct data model and table IDs
+
 
 ## File Structure
 
@@ -56,6 +56,15 @@ sigma_model/               # Generated Sigma model files (from API)
 └── ...
 ```
 
+## Installation
+- The converter is available from github Actions Marketplace at https://github.com/marketplace/actions/dbt_semantics_to_sigma
+- Copy and checkin the entire sigma_converter folder in your dbt git repositoy's root.
+- Create an Action workflow using the code in https://github.com/sigmacomputing/dbt_semantics_to_sigma/blob/main/action.yml
+- Create the Action secrets and variables listed in the Usage section below.
+- Populate the variables listed in the action.yml Variables section below with the appropriate values for your dbt repository.
+- Initiate the Action in initial mode. Once data models are created, set the mode variable to `update`.
+
+
 ## Usage
 
 ### Basic Usage (Initial Mode)
@@ -78,8 +87,6 @@ The converter requires the following Action secrets:
 - `API_CLIENT_ID`: Client ID for Sigma API Key
 - `API_SECRET`: Secret for Sigma API Key
 - `CONNECTION_ID`: Sigma connection ID
-- `DB`: Database name conatining the dbt generated views/tables used by the semantic models
-- `SCHEMA`: Schema name conatining the dbt generated views/tables used by the semantic models
 - `GIT_USER`: The converter retrieves the data models it creates in Sigma and checks them into the repository. Git user name to be used for commits.
 - `GIT_EMAIL`: Git user email to be used for commits.
 - `SIGMA_DOMAIN`: The name of your Sigma org.
@@ -87,17 +94,27 @@ The converter requires the following Action secrets:
 
 ### Variables
 The converter requires the following Action variables:
-- `API_URL`: Sigma API base URL e.g. https://api.sigmacomputing.com
+- `API_URL`: Sigma API base URL e.g. https://api.sigmacomputing.com/v2
 - `MODE`: has to be set as `initial` when using for the first time and `update` afterwards
 
 ### action.yml Variables
 The following variables need to be configured in the action.yml file.
 - `paths`: Path to location of dbt semantic model yml files
 - `DAG_FILE`: Path to DAG JSON file
+- `SEMANTIC_MANIFEST_FILE`: Path to semantic manifest file
 - `TIME_SPINE_FILE`: Path to time spine models file
 - `SOURCE_DIR`: Directory containing source semantic models
-- `SIGMA_MODEL_DIR`: Directory for Sigma model files
-- `USER_FRIENDLY_COLUMN_NAMES`: Set to `true` to convert dimension names to user-friendly format. This needs to match the Sigma connection configuration.
+- `SIGMA_MODEL_DIR`: Directory for Sigma data model specifications retrieved by GET data models call
+- `USER_FRIENDLY_COLUMN_NAMES`: Set to `true` to convert column names in warehouse tables to user-friendly format. This needs to match the Sigma connection configuration.
+
+
+## Known Limitations
+- For measures, the following agg functions are supported: sum, avg, min, max, count, count_distinct.
+- Only Dimension filters are supported in metrics.
+- Dimension filters in metrics support the following condtions: in, not in, ilike, not ilike, is null, is not null.
+- Only simple, derived and ratio metrics are supported.
+- Dimension expressions support the following functions: case, concat, split_part.
+
 
 ## Processing Flow
 
@@ -113,7 +130,7 @@ The following variables need to be configured in the action.yml file.
    - Use sigma_model IDs for foreign entities
    - Create proper relationship configurations
    - Create new data models via Sigma API
-   - Retrieve and save data model specs
+   - Retrieve and save data model specs to sigma_model folder
 5. **Complete**: Generate processing summary and results
 
 ### Update Mode
@@ -126,8 +143,8 @@ The following variables need to be configured in the action.yml file.
    - Update existing data models via Sigma API (or placeholder if test mode)
    - For new models: Create new data models
    - Retrieve and save updated data model specs
-   - Optionally commit to git if `FROM_CI_CD=true`
 4. **Complete**: Generate processing summary and results
+
 
 ## Key Components
 
@@ -169,6 +186,7 @@ The following variables need to be configured in the action.yml file.
 - Support for multiple foreign entities per model
 - DAG-based dependency tracking
 
+
 ## Example Output
 
 ### Processing Summary
@@ -206,35 +224,4 @@ Each sigma_model file contains:
 - Detailed logging of success/failure status
 - Validation of mode and required parameters
 - Error handling for Sigma API calls with detailed error messages
-
-## Mode-Specific Behavior
-
-### Initial Mode
-- Processes all semantic models in source directory
-- Creates new data models in Sigma
-- Generates new GUIDs for all models
-- Full dependency graph analysis
-
-### Update Mode
-- Processes only changed files and their dependents
-- Retrieves existing data model IDs from sigma_model files
-- Updates existing data models instead of creating new ones
-- Minimal dependency graph analysis (only affected models)
-- Requires changed file paths as command line arguments
-
-## Test Mode
-
-When `TEST_FLAG=true`:
-- Uses placeholder functions instead of real Sigma API calls
-- Generates dummy GUIDs for data models
-- Copies processed files directly to sigma_model folder
-- Useful for testing conversion logic without API calls
-
-## CI/CD Integration
-
-When `FROM_CI_CD=true`:
-- Automatically commits changes to git repository
-- Configures git user if not already set
-- Commits data model specs to sigma_model folder
-- Uses environment variables for git user configuration
 
